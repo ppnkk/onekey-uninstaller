@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">OneKey Uninstaller</string>
+    <string name="acc_label">OneKey Uninstaller button trigger</string>
+    <string name="mask_calc">Calculator</string>
+    <string name="mask_clock">Clock</string>
+    <string name="mask_weather">Weather</string>
+    <string name="mask_notes">Notes</string>
+    <string name="acc_desc">Watches the volume-down and power buttons so that a long press or a quick series of presses can back up and uninstall the apps you selected. It does not read screen content or collect anything.</string>
+</resources>

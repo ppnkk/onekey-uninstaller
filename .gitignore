@@ -1,0 +1,29 @@
+# Build output
+out/
+build/
+*.apk
+*.aab
+*.idsig
+*.dex
+
+# Signing keys and secrets - NEVER commit these
+*.jks
+*.keystore
+*.pem
+*.p12
+key.properties
+keystore.properties
+
+# Android SDK / tools (installed outside the repo)
+local.properties
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+.idea/
+*.iml
+.vscode/
+
+# Logs and temp
+*.log
+*.tmp
