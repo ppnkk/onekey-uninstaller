@@ -30,5 +30,6 @@ Android 8.0 or newer. See the [README](README.md) for full setup.
 SHA-256 of `OneKeyUninstaller.apk`:
 
 ```
-(fill in with the value printed by the checksum command in PUBLISH_TO_GITHUB.md)
+DD893668944F042CD744FC9568F5D33707E5C8F9E91D63A76A33B8CBDC880F77
 ```
+(Rebuilding the app produces a new APK with a different hash; update this if you rebuild.)
