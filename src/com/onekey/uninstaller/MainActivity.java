@@ -402,17 +402,44 @@ public class MainActivity extends Activity {
 
     private void applyDisguise(final Disguise.Mask m) {
         if (m.alias == null) {
-            new AlertDialog.Builder(this).setTitle("Hide the icon?")
-                    .setMessage("The app icon will be removed from the app drawer.\n\nTo open the app again, "
-                            + "HOLD the VOLUME-UP button for 2 seconds (works anywhere, even on the lock "
-                            + "screen). The button trigger must stay on.\n\nNote: your launcher may keep showing "
-                            + "a greyed-out icon until you restart the phone; tapping it only opens App info. "
-                            + "Use volume-up to really open the app.")
+            new AlertDialog.Builder(this).setTitle("Hide the app icon")
+                    .setMessage("To reopen the app after hiding, HOLD the VOLUME-UP button for 2 seconds "
+                            + "(works anywhere, even on the lock screen). Keep the button trigger ON.\n\n"
+                            + "On Samsung (One UI) a disabled icon cannot be removed by any app — a greyed "
+                            + "tile that only opens \"App info\" stays in the app list. The reliable way on "
+                            + "Samsung is Settings › Home screen › Hide apps: it keeps the app running "
+                            + "so volume-up still reopens it. Or just pick a Disguise (e.g. Calculator) instead "
+                            + "— it shows one clean, ordinary-looking icon.")
+                    .setPositiveButton("Samsung Hide apps", (d, w) -> openSamsungHideApps())
+                    .setNeutralButton("Hide anyway", (d, w) -> doDisguise(m))
                     .setNegativeButton("Cancel", null)
-                    .setPositiveButton("Hide icon", (d, w) -> doDisguise(m))
                     .show();
         } else {
             doDisguise(m);
+        }
+    }
+
+    /** Opens Samsung's "Hide apps" screen (One UI home-screen settings), with fallbacks. */
+    private void openSamsungHideApps() {
+        try {
+            Intent i = new Intent();
+            i.setClassName("com.sec.android.app.launcher",
+                    "com.android.homescreen.settings.HomeScreenSettingsActivity");
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(i);
+            toast("Tap \"Hide apps\", then select OneKey (or its disguise).");
+            return;
+        } catch (Throwable ignored) {
+        }
+        // Fallback: this app's details page, from where the user can reach Settings.
+        try {
+            Intent i = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    Uri.parse("package:" + getPackageName()));
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(i);
+            toast("Open Settings › Home screen › Hide apps on this phone.");
+        } catch (Throwable ignored) {
+            toast("Open Settings › Home screen › Hide apps manually.");
         }
     }
 

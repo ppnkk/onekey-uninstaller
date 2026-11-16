@@ -55,8 +55,8 @@ In the app: **Backups: restore or delete** > pick a backup > **Restore** > enter
 
 In the app: **7. Disguise** > pick one > **Apply**.
 
-- **Calculator / Clock / Weather / Notes** — the app shows that name and icon but still opens your real screen when tapped. This is the clean way to hide it.
-- **Hidden — no icon** — removes the icon entirely. Reopen by **holding volume-up for 2 seconds** (works even on the lock screen). Some launchers leave a greyed-out "ghost" icon that only opens App info until you reboot — use volume-up to actually open the app.
+- **Calculator / Clock / Weather / Notes** — the app shows that name and icon but still opens your real screen when tapped. This is the clean, reliable way to hide it on every phone (Samsung included).
+- **Hidden — no icon** — disables the launcher entry. Reopen by **holding volume-up for 2 seconds** (works even on the lock screen). This works fully on stock Android (Pixel and most launchers). On **Samsung (One UI)** a disabled icon can't be removed by any app — a greyed "App info" tile stays in the app list even after a reboot. For a true no-icon on Samsung, the Hidden dialog offers a one-tap **Samsung Hide apps** shortcut (Settings › Home screen › Hide apps); it keeps the app running, so volume-up still reopens it. Or simply use a Disguise instead.
 
 ## Build from source
 

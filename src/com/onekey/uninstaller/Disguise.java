@@ -41,7 +41,18 @@ final class Disguise {
         c.getPackageManager().setComponentEnabledSetting(cn, state, PackageManager.DONT_KILL_APP);
     }
 
-    /** Applies the chosen mask. Enables the new launcher first, then disables the others. */
+    /**
+     * Applies the chosen mask by enabling the new launcher-alias and disabling the others,
+     * through the app's own PackageManager. An app may always change its own component state,
+     * so this needs neither root nor Shizuku.
+     *
+     * Note on Samsung One UI: enabling an alias updates the drawer live and shows exactly one
+     * clean icon (disguise works). But disabling ALL aliases ("Hidden") leaves the package with
+     * zero launcher activities, and One UI keeps showing a greyed, non-launchable "App info" tile
+     * that no app — and not even Shizuku, which Samsung blocks from changing another app's
+     * components — can remove; it survives a reboot. On Samsung, real hiding is done with
+     * Settings > Home screen > Hide apps, or by using a disguise instead.
+     */
     static void apply(Context c, String key) {
         Mask chosen = null;
         for (Mask m : MASKS) if (m.key.equals(key)) chosen = m;
@@ -52,6 +63,14 @@ final class Disguise {
             if (m.alias != null && !m.key.equals(chosen.key)) setAlias(c, m.alias, false);
         }
         Prefs.sp(c).edit().putString("mask", chosen.key).commit();
-        AppLog.add(c, "Disguise set to: " + chosen.label);
+
+        if (chosen.alias == null) {
+            AppLog.add(c, "Disguise set to: " + chosen.label
+                    + ". The app has no launcher icon now. On Samsung One UI a greyed \"App info\" tile "
+                    + "may remain that no app can remove - use Settings > Home screen > Hide apps, or pick "
+                    + "a disguise instead. Hold VOLUME-UP for 2s to reopen the app.");
+        } else {
+            AppLog.add(c, "Disguise set to: " + chosen.label + ".");
+        }
     }
 }

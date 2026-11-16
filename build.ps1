@@ -26,7 +26,12 @@ $out = Join-Path $env:TEMP 'onekey-out'
 $ks = $env:ONEKEY_KEYSTORE; if (-not $ks) { $ks = 'C:\Users\kmn18\AndroidBuild\onekey-release.jks' }
 
 function Run($exe, $argList) {
-    & $exe @argList
+    # Lower ErrorActionPreference around the native call so a tool writing to stderr
+    # (e.g. javac's "uses a deprecated API" note) is not turned into a terminating
+    # error by PowerShell 5.1. Only a non-zero exit code is treated as failure.
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try { & $exe @argList } finally { $ErrorActionPreference = $prev }
     if ($LASTEXITCODE -ne 0) { throw "$exe failed with exit code $LASTEXITCODE" }
 }
 
@@ -37,7 +42,7 @@ Write-Host '== resources'
 Run "$bt\aapt2.exe" @('compile', '--dir', "$proj\res", '-o', "$out\res.zip")
 Run "$bt\aapt2.exe" @('link', '-o', "$out\base.apk", '-I', $jar, '--manifest', "$proj\AndroidManifest.xml",
     '--java', "$out\gen", '--min-sdk-version', '26', '--target-sdk-version', '34',
-    '--version-code', '2', '--version-name', '1.1', "$out\res.zip")
+    '--version-code', '4', '--version-name', '1.3', "$out\res.zip")
 
 Write-Host '== compile'
 # Shizuku API 13.1.5 (classes.jar from the official AARs, vendored under libs/)
