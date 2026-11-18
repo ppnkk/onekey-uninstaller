@@ -49,11 +49,13 @@ public class TriggerService extends AccessibilityService {
         if (Prefs.armed(this) && Prefs.volEnabled(this)) trigger("volume-down long press");
     };
 
-    /** Volume-up held 2s opens the app. Always works, even when the icon is hidden. */
+    /** Volume-up held 2s opens the REAL app, past any Calculator disguise (reveal flag). */
     private final Runnable openFired = () -> {
         try {
             Intent i = new Intent(this, MainActivity.class);
-            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP
+                    | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            i.putExtra(MainActivity.EXTRA_REVEAL, true);
             startActivity(i);
         } catch (Exception e) {
             AppLog.add(this, "Open from volume-up failed: " + e.getMessage());

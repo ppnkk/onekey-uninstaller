@@ -430,6 +430,9 @@ final class Engine {
                 }
             }
             AppLog.add(c, "Restore complete: " + meta.optString("label") + " (" + pkg + ")");
+            AppLog.add(c, "If a Samsung launcher shows a second icon for this app, it is only a stray "
+                    + "shortcut (the app is installed once) — long-press it and choose \"Remove from Home\", "
+                    + "or reboot, to clear it.");
         } finally {
             if (mode != Shell.NONE) deleteDir(tmp);
         }
@@ -440,7 +443,9 @@ final class Engine {
         if (apks.isEmpty()) throw new java.io.IOException("Backup contains no APK");
         long total = 0;
         for (File a : apks) total += a.length();
-        String flags = "-r" + (Build.VERSION.SDK_INT >= 34 ? " --bypass-low-target-sdk-block" : "");
+        // --user 0 keeps the restore in the main profile only, so it can never create a
+        // clone in a Dual App / Secure Folder profile.
+        String flags = "-r --user 0" + (Build.VERSION.SDK_INT >= 34 ? " --bypass-low-target-sdk-block" : "");
         Shell.Result r = Shell.run(mode, "pm install-create " + flags + " -S " + total);
         Matcher m = Pattern.compile("\\[(\\d+)\\]").matcher(r.out);
         if (!r.ok() || !m.find()) throw new java.io.IOException("pm install-create: " + r.out);

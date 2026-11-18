@@ -13,7 +13,9 @@
 - **Silent uninstall** — with root, or with [Shizuku](https://shizuku.rikka.app/) (no root needed).
 - **Restore** — reinstall any app from its backup (with root, the app's data comes back too).
 - **Optional warning popup** — a 5-second countdown with Cancel before anything is deleted. Turn it off for an instant, silent run.
-- **Disguise** — show the app as Calculator / Clock / Weather / Notes, or hide its icon completely. Reopen a hidden app by holding volume-up for 2 seconds.
+- **Calculator disguise** — the app can appear and work as a real, fully functional calculator. Reveal the real OneKey screen by holding **volume-up for 2 seconds**.
+- **App lock (PIN)** — require a PIN every time the real screen opens, including after a volume-up reveal.
+- **App icons** — the "choose apps" list shows each app's icon, name and package.
 
 ## Requirements
 
@@ -51,12 +53,16 @@ Android does not let one app read another app's data without root, so without ro
 
 In the app: **Backups: restore or delete** > pick a backup > **Restore** > enter the password. With root the app and its data come back; otherwise the app is reinstalled (silently with Shizuku) without data.
 
-## Disguise
+## Disguise and app lock
 
 In the app: **7. Disguise** > pick one > **Apply**.
 
-- **Calculator / Clock / Weather / Notes** — the app shows that name and icon but still opens your real screen when tapped. This is the clean, reliable way to hide it on every phone (Samsung included).
-- **Hidden — no icon** — disables the launcher entry. Reopen by **holding volume-up for 2 seconds** (works even on the lock screen). This works fully on stock Android (Pixel and most launchers). On **Samsung (One UI)** a disabled icon can't be removed by any app — a greyed "App info" tile stays in the app list even after a reboot. For a true no-icon on Samsung, the Hidden dialog offers a one-tap **Samsung Hide apps** shortcut (Settings › Home screen › Hide apps); it keeps the app running, so volume-up still reopens it. Or simply use a Disguise instead.
+- **OneKey Uninstaller (normal)** — the usual name and icon.
+- **Calculator (disguise)** — the icon and name become a Calculator, and tapping it opens a **real, working calculator**. To reach the real OneKey screen, **hold volume-up for 2 seconds** (works even on the lock screen). The button trigger (step 3) must be on, since that is the only way back in.
+
+**App lock (step 8)** — set a PIN and OneKey asks for it every time the real screen opens, including after a volume-up reveal. If you forget the PIN you must clear the app's data to get back in (your backups on storage are kept).
+
+> Note: an older "hide the icon completely" option was removed. On Samsung One UI a disabled launcher icon can't be removed by any app (it leaves a greyed tile that survives a reboot), so it caused confusion. The Calculator disguise is the reliable way to hide in plain sight; for a literal no-icon, use Samsung's own Settings › Home screen › Hide apps.
 
 ## Build from source
 

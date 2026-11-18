@@ -13,12 +13,16 @@ import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
 import android.text.InputType;
+import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.BaseAdapter;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.EditText;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.ListView;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -39,11 +43,44 @@ public class MainActivity extends Activity {
     private Button btnApps;
     private Button btnPower;
     private Button btnDisguise;
+    private Button btnLock;
     private volatile Boolean rootState; // null = not checked yet
+
+    public static final String EXTRA_REVEAL = "reveal";
+    private boolean realBuilt;
+
+    // calculator decoy state
+    private TextView calcDisplay;
+    private StringBuilder calcCur = new StringBuilder("0");
+    private double calcAcc;
+    private String calcOp;
+    private boolean calcStart = true, calcEvaluated;
 
     @Override
     protected void onCreate(Bundle b) {
         super.onCreate(b);
+        applyGate();
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        applyGate();
+    }
+
+    /** Decides what to show on launch: the calculator decoy, the PIN lock, or the real app. */
+    private void applyGate() {
+        boolean reveal = getIntent() != null && getIntent().getBooleanExtra(EXTRA_REVEAL, false);
+        boolean disguised = !"real".equals(Prefs.sp(this).getString("mask", "real"));
+        if (disguised && !reveal) { buildDecoy(); return; }
+        if (Prefs.isLockSet(this) && !realBuilt) { promptLock(); return; }
+        buildRealUi();
+    }
+
+    private void buildRealUi() {
+        if (realBuilt) return;
+        realBuilt = true;
         int pad = dp(16);
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
@@ -76,6 +113,8 @@ public class MainActivity extends Activity {
         root.addView(button("6. Connect Shizuku (silent delete without root)", v -> connectShizuku()));
         btnDisguise = button("", v -> pickDisguise());
         root.addView(btnDisguise);
+        btnLock = button("", v -> manageLock());
+        root.addView(btnLock);
 
         root.addView(header("Trigger"));
         root.addView(check("ARMED (buttons are active)", "armed", false));
@@ -114,6 +153,7 @@ public class MainActivity extends Activity {
             rikka.shizuku.Shizuku.addBinderReceivedListenerSticky(shizukuBinder);
         } catch (Throwable ignored) {
         }
+        refresh(); // populate the status/log now, since we may be built after onResume (unlock/reveal)
     }
 
     private final rikka.shizuku.Shizuku.OnRequestPermissionResultListener shizukuResult = (code, result) -> {
@@ -158,6 +198,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        if (!realBuilt) return; // decoy or lock screen: the real views do not exist
         AppLog.listener = () -> runOnUiThread(this::refresh);
         refresh();
     }
@@ -217,6 +258,7 @@ public class MainActivity extends Activity {
     }
 
     private void refresh() {
+        if (!realBuilt || status == null) return; // only the real screen has these views
         Boolean r = rootState;
         boolean acc = accessibilityOn();
         boolean owner = Engine.isDeviceOwner(this);
@@ -242,10 +284,228 @@ public class MainActivity extends Activity {
         btnPower.setText("Power presses needed: " + Prefs.powerCount(this) + " (tap to change)");
         if (btnDisguise != null)
             btnDisguise.setText("7. Disguise: " + Disguise.current(this).label);
+        if (btnLock != null)
+            btnLock.setText("8. App lock: " + (Prefs.isLockSet(this) ? "On (PIN set)" : "Off"));
         log.setText(AppLog.read(this));
     }
 
     private static String mark(boolean ok) { return ok ? "✔  " : "✘  "; }
+
+    // ------------------------------------------------------------ calculator decoy
+
+    /** A working calculator shown instead of the real app while disguised. */
+    private void buildDecoy() {
+        calcCur = new StringBuilder("0");
+        calcAcc = 0;
+        calcOp = null;
+        calcStart = true;
+        calcEvaluated = false;
+
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackgroundColor(Color.parseColor("#1C1C1C"));
+        int pad = dp(6);
+        root.setPadding(pad, pad, pad, pad);
+
+        calcDisplay = new TextView(this);
+        calcDisplay.setText("0");
+        calcDisplay.setTextColor(Color.WHITE);
+        calcDisplay.setTextSize(56);
+        calcDisplay.setSingleLine(true);
+        calcDisplay.setGravity(Gravity.END | Gravity.BOTTOM);
+        calcDisplay.setPadding(dp(16), dp(40), dp(20), dp(16));
+        root.addView(calcDisplay,
+                new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 2.2f));
+
+        String[][] rows = {
+                {"C", "⌫", "%", "÷"},
+                {"7", "8", "9", "×"},
+                {"4", "5", "6", "−"},
+                {"1", "2", "3", "+"},
+                {"±", "0", ".", "="},
+        };
+        for (String[] r : rows) {
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            for (String key : r) row.addView(calcButton(key));
+            root.addView(row,
+                    new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        }
+        setContentView(root);
+    }
+
+    private Button calcButton(final String key) {
+        Button b = new Button(this);
+        b.setText(key);
+        b.setAllCaps(false);
+        b.setTextSize(22);
+        b.setTextColor(Color.WHITE);
+        boolean op = "÷×−+=".contains(key);
+        boolean fn = "C⌫%±".contains(key);
+        android.graphics.drawable.GradientDrawable bg = new android.graphics.drawable.GradientDrawable();
+        bg.setColor(Color.parseColor(op ? "#FF9500" : fn ? "#5A5A5A" : "#333333"));
+        bg.setCornerRadius(dp(8));
+        b.setBackground(bg);
+        int m = dp(4);
+        LinearLayout.LayoutParams lp =
+                new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f);
+        lp.setMargins(m, m, m, m);
+        b.setLayoutParams(lp);
+        b.setOnClickListener(v -> calcInput(key));
+        return b;
+    }
+
+    private void calcInput(String k) {
+        switch (k) {
+            case "C":
+                calcCur = new StringBuilder("0");
+                calcAcc = 0; calcOp = null; calcStart = true; calcEvaluated = false;
+                break;
+            case "⌫": // backspace
+                if (!calcStart) {
+                    if (calcCur.length() > 1) calcCur.deleteCharAt(calcCur.length() - 1);
+                    else calcCur = new StringBuilder("0");
+                }
+                break;
+            case "±": // negate
+                if (calcCur.length() > 0 && calcCur.charAt(0) == '-') calcCur.deleteCharAt(0);
+                else if (!"0".contentEquals(calcCur)) calcCur.insert(0, '-');
+                break;
+            case "%":
+                try { calcCur = new StringBuilder(fmt(Double.parseDouble(calcCur.toString()) / 100.0)); }
+                catch (Exception ignored) {}
+                break;
+            case "÷": case "×": case "−": case "+":
+                applyPending(); calcOp = k; calcStart = true; calcEvaluated = false;
+                break;
+            case "=":
+                applyPending(); calcOp = null; calcStart = true; calcEvaluated = true;
+                break;
+            case ".":
+                if (calcStart) { calcCur = new StringBuilder("0."); calcStart = false; }
+                else if (calcCur.indexOf(".") < 0) calcCur.append(".");
+                break;
+            default: // a digit
+                if (calcStart || calcEvaluated) {
+                    calcCur = new StringBuilder(k); calcStart = false; calcEvaluated = false;
+                } else if ("0".contentEquals(calcCur)) {
+                    calcCur = new StringBuilder(k);
+                } else {
+                    calcCur.append(k);
+                }
+        }
+        if (calcDisplay != null) calcDisplay.setText(calcCur.toString());
+    }
+
+    private void applyPending() {
+        double cur;
+        try { cur = Double.parseDouble(calcCur.toString()); } catch (Exception e) { cur = 0; }
+        if (calcOp == null) {
+            calcAcc = cur;
+        } else switch (calcOp) {
+            case "+": calcAcc += cur; break;
+            case "−": calcAcc -= cur; break;
+            case "×": calcAcc *= cur; break;
+            case "÷": calcAcc = cur == 0 ? 0 : calcAcc / cur; break;
+            default: calcAcc = cur;
+        }
+        calcCur = new StringBuilder(fmt(calcAcc));
+    }
+
+    private String fmt(double v) {
+        if (Double.isNaN(v) || Double.isInfinite(v)) return "0";
+        if (v == Math.rint(v) && Math.abs(v) < 1e15) return String.valueOf((long) v);
+        return String.valueOf(v);
+    }
+
+    // ------------------------------------------------------------ app lock (PIN)
+
+    private void promptLock() {
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setGravity(Gravity.CENTER);
+        int pad = dp(28);
+        root.setPadding(pad, pad, pad, pad);
+        root.setBackgroundColor(Color.WHITE);
+
+        TextView t = new TextView(this);
+        t.setText("Enter PIN");
+        t.setTextSize(20);
+        t.setTypeface(Typeface.DEFAULT_BOLD);
+        t.setTextColor(Color.parseColor("#212121"));
+        t.setGravity(Gravity.CENTER);
+        root.addView(t);
+
+        final EditText pin = new EditText(this);
+        pin.setHint("PIN");
+        pin.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_VARIATION_PASSWORD);
+        pin.setGravity(Gravity.CENTER);
+        pin.setTextSize(22);
+        root.addView(pin,
+                new LinearLayout.LayoutParams(dp(200), ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        final TextView err = new TextView(this);
+        err.setTextColor(Color.parseColor("#C62828"));
+        err.setPadding(0, dp(8), 0, dp(8));
+        root.addView(err);
+
+        Button go = button("Unlock", null);
+        go.setOnClickListener(v -> {
+            if (Prefs.checkLock(this, pin.getText().toString())) {
+                realBuilt = false;
+                buildRealUi();
+            } else {
+                err.setText("Wrong PIN");
+                pin.setText("");
+            }
+        });
+        root.addView(go,
+                new LinearLayout.LayoutParams(dp(200), ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        setContentView(root);
+    }
+
+    private void manageLock() {
+        if (!Prefs.isLockSet(this)) { setLockDialog(); return; }
+        new AlertDialog.Builder(this).setTitle("App lock")
+                .setMessage("A PIN is set. OneKey asks for it every time the real screen opens "
+                        + "(including after Volume-up from the Calculator disguise).")
+                .setPositiveButton("Change PIN", (d, w) -> setLockDialog())
+                .setNeutralButton("Turn off", (d, w) -> {
+                    Prefs.clearLock(this);
+                    AppLog.add(this, "App lock turned off.");
+                    refresh();
+                })
+                .setNegativeButton("Cancel", null).show();
+    }
+
+    private void setLockDialog() {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(20), dp(8), dp(20), 0);
+        final EditText p1 = new EditText(this);
+        p1.setHint("New PIN (at least 4 digits)");
+        p1.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_VARIATION_PASSWORD);
+        final EditText p2 = new EditText(this);
+        p2.setHint("Repeat PIN");
+        p2.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_VARIATION_PASSWORD);
+        TextView note = new TextView(this);
+        note.setText("If you forget this PIN you must clear the app's data to get back in "
+                + "(your backups on storage are kept).");
+        box.addView(note);
+        box.addView(p1);
+        box.addView(p2);
+        new AlertDialog.Builder(this).setTitle("Set app lock PIN").setView(box)
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Save", (d, w) -> {
+                    String a = p1.getText().toString();
+                    if (a.length() < 4) { toast("PIN is too short"); return; }
+                    if (!a.equals(p2.getText().toString())) { toast("PINs do not match"); return; }
+                    Prefs.setLock(this, a);
+                    AppLog.add(this, "App lock PIN set.");
+                    refresh();
+                }).show();
+    }
 
     // ------------------------------------------------------------ setup steps
 
@@ -292,46 +552,109 @@ public class MainActivity extends Activity {
         return e;
     }
 
+    private static final class AppItem {
+        final String label, pkg;
+        final android.graphics.drawable.Drawable icon;
+        boolean checked;
+        AppItem(String label, String pkg, android.graphics.drawable.Drawable icon) {
+            this.label = label;
+            this.pkg = pkg;
+            this.icon = icon;
+        }
+    }
+
     private void pickApps() {
         final boolean showSystem = Prefs.showSystem(this);
         toast("Loading apps…");
         new Thread(() -> {
             PackageManager pm = getPackageManager();
-            final List<String[]> apps = new ArrayList<>(); // {label, package}
+            Set<String> stored = Prefs.targets(this);
+            final List<AppItem> items = new ArrayList<>();
             for (ApplicationInfo ai : pm.getInstalledApplications(0)) {
                 if (ai.packageName.equals(getPackageName())) continue;
                 boolean system = (ai.flags & ApplicationInfo.FLAG_SYSTEM) != 0;
                 if (system && !showSystem) continue;
-                apps.add(new String[]{String.valueOf(pm.getApplicationLabel(ai)), ai.packageName});
+                String label = String.valueOf(pm.getApplicationLabel(ai));
+                android.graphics.drawable.Drawable icon = null;
+                try { icon = pm.getApplicationIcon(ai); } catch (Throwable ignored) {}
+                AppItem it = new AppItem(label, ai.packageName, icon);
+                it.checked = stored.contains(ai.packageName); // drop stale (uninstalled) entries
+                items.add(it);
             }
-            apps.sort((x, y) -> x[0].compareToIgnoreCase(y[0]));
-            runOnUiThread(() -> showAppDialog(apps, showSystem));
+            items.sort((x, y) -> x.label.compareToIgnoreCase(y.label));
+            runOnUiThread(() -> showAppDialog(items, showSystem));
         }).start();
     }
 
-    private void showAppDialog(final List<String[]> apps, final boolean showSystem) {
+    private Set<String> checkedPkgs(List<AppItem> items) {
+        Set<String> sel = new java.util.HashSet<>();
+        for (AppItem it : items) if (it.checked) sel.add(it.pkg);
+        return sel;
+    }
+
+    private void showAppDialog(final List<AppItem> items, final boolean showSystem) {
         if (isFinishing()) return;
-        // Only apps that are shown (installed) stay selected; stale entries are dropped.
-        final Set<String> sel = new java.util.HashSet<>();
-        Set<String> stored = Prefs.targets(this);
-        for (String[] a : apps) if (stored.contains(a[1])) sel.add(a[1]);
-        CharSequence[] names = new CharSequence[apps.size()];
-        boolean[] checked = new boolean[apps.size()];
-        for (int i = 0; i < apps.size(); i++) {
-            names[i] = apps.get(i)[0] + "\n" + apps.get(i)[1];
-            checked[i] = sel.contains(apps.get(i)[1]);
-        }
-        new AlertDialog.Builder(this).setTitle("Apps to delete on trigger")
-                .setMultiChoiceItems(names, checked, (d, which, on) -> {
-                    if (on) sel.add(apps.get(which)[1]);
-                    else sel.remove(apps.get(which)[1]);
-                })
+        final int iconPx = dp(40);
+        final BaseAdapter adapter = new BaseAdapter() {
+            public int getCount() { return items.size(); }
+            public Object getItem(int p) { return items.get(p); }
+            public long getItemId(int p) { return p; }
+            public View getView(int p, View cv, ViewGroup parent) {
+                LinearLayout row;
+                if (cv instanceof LinearLayout) {
+                    row = (LinearLayout) cv;
+                } else {
+                    row = new LinearLayout(MainActivity.this);
+                    row.setOrientation(LinearLayout.HORIZONTAL);
+                    row.setGravity(Gravity.CENTER_VERTICAL);
+                    row.setPadding(dp(10), dp(8), dp(10), dp(8));
+                    ImageView iv = new ImageView(MainActivity.this);
+                    iv.setLayoutParams(new LinearLayout.LayoutParams(iconPx, iconPx));
+                    row.addView(iv);
+                    LinearLayout col = new LinearLayout(MainActivity.this);
+                    col.setOrientation(LinearLayout.VERTICAL);
+                    LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
+                            0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+                    clp.leftMargin = dp(12);
+                    clp.rightMargin = dp(8);
+                    col.setLayoutParams(clp);
+                    TextView name = new TextView(MainActivity.this);
+                    name.setTextSize(15);
+                    name.setTextColor(Color.parseColor("#212121"));
+                    TextView pkg = new TextView(MainActivity.this);
+                    pkg.setTextSize(11);
+                    pkg.setTextColor(Color.parseColor("#757575"));
+                    col.addView(name);
+                    col.addView(pkg);
+                    row.addView(col);
+                    CheckBox cb = new CheckBox(MainActivity.this);
+                    cb.setClickable(false);
+                    cb.setFocusable(false);
+                    row.addView(cb);
+                    row.setTag(new View[]{iv, name, pkg, cb});
+                }
+                View[] h = (View[]) row.getTag();
+                AppItem it = items.get(p);
+                ((ImageView) h[0]).setImageDrawable(it.icon);
+                ((TextView) h[1]).setText(it.label);
+                ((TextView) h[2]).setText(it.pkg);
+                ((CheckBox) h[3]).setChecked(it.checked);
+                return row;
+            }
+        };
+        final ListView lv = new ListView(this);
+        lv.setAdapter(adapter);
+        lv.setOnItemClickListener((parent, view, pos, id) -> {
+            items.get(pos).checked = !items.get(pos).checked;
+            adapter.notifyDataSetChanged();
+        });
+        new AlertDialog.Builder(this).setTitle("Apps to delete on trigger").setView(lv)
                 .setPositiveButton("Save", (d, w) -> {
-                    Prefs.setTargets(this, sel);
+                    Prefs.setTargets(this, checkedPkgs(items));
                     refresh();
                 })
                 .setNeutralButton(showSystem ? "Hide system apps" : "Show system apps", (d, w) -> {
-                    Prefs.setTargets(this, sel);
+                    Prefs.setTargets(this, checkedPkgs(items));
                     Prefs.set(this, "showSystem", !showSystem);
                     pickApps();
                 })
@@ -401,46 +724,17 @@ public class MainActivity extends Activity {
     }
 
     private void applyDisguise(final Disguise.Mask m) {
-        if (m.alias == null) {
-            new AlertDialog.Builder(this).setTitle("Hide the app icon")
-                    .setMessage("To reopen the app after hiding, HOLD the VOLUME-UP button for 2 seconds "
-                            + "(works anywhere, even on the lock screen). Keep the button trigger ON.\n\n"
-                            + "On Samsung (One UI) a disabled icon cannot be removed by any app — a greyed "
-                            + "tile that only opens \"App info\" stays in the app list. The reliable way on "
-                            + "Samsung is Settings › Home screen › Hide apps: it keeps the app running "
-                            + "so volume-up still reopens it. Or just pick a Disguise (e.g. Calculator) instead "
-                            + "— it shows one clean, ordinary-looking icon.")
-                    .setPositiveButton("Samsung Hide apps", (d, w) -> openSamsungHideApps())
-                    .setNeutralButton("Hide anyway", (d, w) -> doDisguise(m))
-                    .setNegativeButton("Cancel", null)
-                    .show();
-        } else {
-            doDisguise(m);
-        }
-    }
-
-    /** Opens Samsung's "Hide apps" screen (One UI home-screen settings), with fallbacks. */
-    private void openSamsungHideApps() {
-        try {
-            Intent i = new Intent();
-            i.setClassName("com.sec.android.app.launcher",
-                    "com.android.homescreen.settings.HomeScreenSettingsActivity");
-            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            startActivity(i);
-            toast("Tap \"Hide apps\", then select OneKey (or its disguise).");
-            return;
-        } catch (Throwable ignored) {
-        }
-        // Fallback: this app's details page, from where the user can reach Settings.
-        try {
-            Intent i = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                    Uri.parse("package:" + getPackageName()));
-            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            startActivity(i);
-            toast("Open Settings › Home screen › Hide apps on this phone.");
-        } catch (Throwable ignored) {
-            toast("Open Settings › Home screen › Hide apps manually.");
-        }
+        if (!"calc".equals(m.key)) { doDisguise(m); return; }
+        final boolean acc = accessibilityOn();
+        new AlertDialog.Builder(this).setTitle("Disguise as Calculator")
+                .setMessage("Your app will look and work like a real Calculator. To get back to OneKey, "
+                        + "HOLD the VOLUME-UP button for 2 seconds (works even on the lock screen).\n\n"
+                        + (acc ? "The button trigger is ON — keep it on, it is the only way back in."
+                               : "⚠ The button trigger is OFF. Turn it on first (step 3), otherwise you "
+                               + "will NOT be able to reopen the app after disguising it."))
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton(acc ? "Apply" : "Apply anyway", (d, w) -> doDisguise(m))
+                .show();
     }
 
     private void doDisguise(final Disguise.Mask m) {

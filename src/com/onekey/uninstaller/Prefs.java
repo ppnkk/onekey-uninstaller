@@ -43,4 +43,42 @@ final class Prefs {
                 .putString("priv", Base64.getEncoder().encodeToString(k.privBlob))
                 .commit();
     }
+
+    // ---- app lock (PIN) --------------------------------------------------
+    static boolean isLockSet(Context c) { return sp(c).contains("lockHash"); }
+
+    static void setLock(Context c, String pin) {
+        byte[] salt = new byte[16];
+        new java.security.SecureRandom().nextBytes(salt);
+        sp(c).edit()
+                .putString("lockSalt", Base64.getEncoder().encodeToString(salt))
+                .putString("lockHash", hashPin(pin, salt))
+                .commit();
+    }
+
+    static void clearLock(Context c) {
+        sp(c).edit().remove("lockHash").remove("lockSalt").commit();
+    }
+
+    static boolean checkLock(Context c, String pin) {
+        if (!isLockSet(c)) return true;
+        byte[] salt = Base64.getDecoder().decode(sp(c).getString("lockSalt", ""));
+        return hashPin(pin, salt).equals(sp(c).getString("lockHash", ""));
+    }
+
+    private static String hashPin(String pin, byte[] salt) {
+        try {
+            java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
+            byte[] h = pin.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            for (int i = 0; i < 20000; i++) {
+                md.reset();
+                md.update(salt);
+                md.update(h);
+                h = md.digest();
+            }
+            return Base64.getEncoder().encodeToString(h);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
 }

@@ -53,45 +53,6 @@
             </intent-filter>
         </activity-alias>
 
-        <activity-alias
-            android:name=".LauncherClock"
-            android:targetActivity=".MainActivity"
-            android:label="@string/mask_clock"
-            android:icon="@drawable/ic_mask_clock"
-            android:enabled="false"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity-alias>
-
-        <activity-alias
-            android:name=".LauncherWeather"
-            android:targetActivity=".MainActivity"
-            android:label="@string/mask_weather"
-            android:icon="@drawable/ic_mask_weather"
-            android:enabled="false"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity-alias>
-
-        <activity-alias
-            android:name=".LauncherNotes"
-            android:targetActivity=".MainActivity"
-            android:label="@string/mask_notes"
-            android:icon="@drawable/ic_mask_notes"
-            android:enabled="false"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity-alias>
-
         <service
             android:name=".TriggerService"
             android:exported="true"
