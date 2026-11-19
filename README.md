@@ -13,9 +13,10 @@
 - **Silent uninstall** — with root, or with [Shizuku](https://shizuku.rikka.app/) (no root needed).
 - **Restore** — reinstall any app from its backup (with root, the app's data comes back too).
 - **Optional warning popup** — a 5-second countdown with Cancel before anything is deleted. Turn it off for an instant, silent run.
-- **Calculator disguise** — the app can appear and work as a real, fully functional calculator. Reveal the real OneKey screen by holding **volume-up for 2 seconds**.
+- **Calculator disguise** — the app can appear and work as a real, fully functional calculator. Reveal the real OneKey screen by holding **volume-up for 2 seconds**, or by holding the calculator's **"=" key for 2 seconds**.
 - **App lock (PIN)** — require a PIN every time the real screen opens, including after a volume-up reveal.
 - **App icons** — the "choose apps" list shows each app's icon, name and package.
+- **Clean, tabbed design** — Home, Setup, Trigger and Log tabs, with a clear Armed / Not armed status card and colored "Ready / To do" labels for every setup step.
 
 ## Requirements
 
@@ -31,13 +32,14 @@
 
 ## Setup (once)
 
-1. **Set backup password.** Needed to restore. It cannot be recovered. Changing it later does not change the password of backups already made.
-2. **Choose apps to delete.** Only the apps you tick here are ever deleted — check this list carefully.
-3. **Turn on the button trigger.** In Accessibility settings, switch on "OneKey Uninstaller button trigger". On Android 13+, if it says "Restricted setting": Settings > Apps > OneKey Uninstaller > ⋮ menu > "Allow restricted settings", then try again.
-4. **Check root access** (only if your phone is rooted).
-5. **Allow backup folder.** Backups then go to `/sdcard/OneKeyBackups` and survive uninstalling this app.
-6. **Connect Shizuku** (no root): install and start Shizuku, then tap step 6 and "Allow all the time". Shizuku must be started again after each reboot.
-7. Tick **ARMED** and choose your trigger.
+Open the **Setup** tab. Each step shows a green **Ready** or an amber **To do** label; tap a step to set it up.
+
+1. **Backup password.** Needed to restore. It cannot be recovered. Changing it later does not change the password of backups already made.
+2. **Apps to delete.** Only the apps you tick here are ever deleted — check this list carefully.
+3. **Button trigger service.** In Accessibility settings, switch on "OneKey Uninstaller button trigger". On Android 13+, if it says "Restricted setting": Settings > Apps > OneKey Uninstaller > ⋮ menu > "Allow restricted settings", then try again.
+4. **Backup folder.** Backups then go to `/sdcard/OneKeyBackups` and survive uninstalling this app.
+5. **Root access** (only if your phone is rooted), or **Shizuku** (no root): install and start Shizuku, then tap Shizuku and "Allow all the time". Shizuku must be started again after each reboot.
+6. On the **Home** tab, switch the status card to **Armed**. Choose your buttons on the **Trigger** tab.
 
 ## How it works
 
@@ -51,16 +53,16 @@ Android does not let one app read another app's data without root, so without ro
 
 ## Restore
 
-In the app: **Backups: restore or delete** > pick a backup > **Restore** > enter the password. With root the app and its data come back; otherwise the app is reinstalled (silently with Shizuku) without data.
+In the app: **Home** tab > **Backups** > pick a backup > **Restore** > enter the password. With root the app and its data come back; otherwise the app is reinstalled (silently with Shizuku) without data.
 
 ## Disguise and app lock
 
-In the app: **7. Disguise** > pick one > **Apply**.
+In the app: **Setup** tab > **Disguise** > pick one > **Apply**.
 
 - **OneKey Uninstaller (normal)** — the usual name and icon.
-- **Calculator (disguise)** — the icon and name become a Calculator, and tapping it opens a **real, working calculator**. To reach the real OneKey screen, **hold volume-up for 2 seconds** (works even on the lock screen). The button trigger (step 3) must be on, since that is the only way back in.
+- **Calculator (disguise)** — the icon and name become a Calculator, and tapping it opens a **real, working calculator**. To reach the real OneKey screen, **hold volume-up for 2 seconds** (works even on the lock screen), or **hold the "=" key for 2 seconds** inside the calculator. The "=" key always works, so the disguise can never lock you out even if the button trigger is off.
 
-**App lock (step 8)** — set a PIN and OneKey asks for it every time the real screen opens, including after a volume-up reveal. If you forget the PIN you must clear the app's data to get back in (your backups on storage are kept).
+**App lock (Setup › App lock)** — set a PIN and OneKey asks for it every time the real screen opens, including after a volume-up reveal. If you forget the PIN you must clear the app's data to get back in (your backups on storage are kept).
 
 > Note: an older "hide the icon completely" option was removed. On Samsung One UI a disabled launcher icon can't be removed by any app (it leaves a greyed tile that survives a reboot), so it caused confusion. The Calculator disguise is the reliable way to hide in plain sight; for a literal no-icon, use Samsung's own Settings › Home screen › Hide apps.
 

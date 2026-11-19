@@ -42,7 +42,7 @@ Write-Host '== resources'
 Run "$bt\aapt2.exe" @('compile', '--dir', "$proj\res", '-o', "$out\res.zip")
 Run "$bt\aapt2.exe" @('link', '-o', "$out\base.apk", '-I', $jar, '--manifest', "$proj\AndroidManifest.xml",
     '--java', "$out\gen", '--min-sdk-version', '26', '--target-sdk-version', '34',
-    '--version-code', '5', '--version-name', '1.4', "$out\res.zip")
+    '--version-code', '6', '--version-name', '1.5', "$out\res.zip")
 
 Write-Host '== compile'
 # Shizuku API 13.1.5 (classes.jar from the official AARs, vendored under libs/)

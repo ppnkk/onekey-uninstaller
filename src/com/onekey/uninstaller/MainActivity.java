@@ -8,6 +8,7 @@ import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -38,13 +39,34 @@ import java.util.Locale;
 import java.util.Set;
 
 public class MainActivity extends Activity {
-    private TextView status;
     private TextView log;
-    private Button btnApps;
-    private Button btnPower;
-    private Button btnDisguise;
-    private Button btnLock;
     private volatile Boolean rootState; // null = not checked yet
+
+    // tabbed main screen
+    private android.widget.FrameLayout pages;
+    private final View[] pageViews = new View[4];
+    private final LinearLayout[] navItems = new LinearLayout[4];
+    private boolean syncing; // true while refresh() sets switches, so listeners ignore it
+
+    /** One tappable line in a card: icon badge, title, subtitle, status pill, chevron. */
+    private static final class Row {
+        View view;
+        android.widget.FrameLayout badge;
+        TextView title, sub, pill;
+    }
+
+    // home
+    private LinearLayout hero;
+    private TextView heroTitle, heroSub, heroProgress;
+    private android.widget.Switch heroSwitch;
+    private Row rPwd, rApps, rAcc, rMode, rApk;
+    private View apkDiv;
+    private Button btnBackups;
+    // setup
+    private Row sPwd, sApps, sAcc, sStorage, sRoot, sShz, sDisguise, sLock;
+    // trigger
+    private android.widget.Switch swVol, swPower, swWarn, swApk;
+    private Row rPowerCount;
 
     public static final String EXTRA_REVEAL = "reveal";
     private boolean realBuilt;
@@ -81,72 +103,32 @@ public class MainActivity extends Activity {
     private void buildRealUi() {
         if (realBuilt) return;
         realBuilt = true;
-        int pad = dp(16);
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(pad, pad, pad, pad);
+        styleWindow();
+        LinearLayout shell = new LinearLayout(this);
+        shell.setOrientation(LinearLayout.VERTICAL);
+        shell.setBackgroundColor(Ui.BG);
 
-        TextView title = new TextView(this);
-        title.setText("OneKey Uninstaller");
-        title.setTextSize(22);
-        title.setTypeface(Typeface.DEFAULT_BOLD);
-        root.addView(title);
+        pages = new android.widget.FrameLayout(this);
+        shell.addView(pages, new LinearLayout.LayoutParams(Ui.MATCH, 0, 1f));
 
-        TextView sub = new TextView(this);
-        sub.setText("One hardware-button press makes an encrypted backup of the selected apps and uninstalls them.");
-        sub.setPadding(0, dp(4), 0, dp(12));
-        root.addView(sub);
+        LinearLayout nav = new LinearLayout(this);
+        nav.setOrientation(LinearLayout.HORIZONTAL);
+        nav.setBackgroundColor(Color.WHITE);
+        nav.setElevation(dp(8));
+        nav.setPadding(0, dp(6), 0, dp(6));
+        navItems[0] = navItem(0, R.drawable.ic_home, "Home");
+        navItems[1] = navItem(1, R.drawable.ic_checklist, "Setup");
+        navItems[2] = navItem(2, R.drawable.ic_bolt, "Trigger");
+        navItems[3] = navItem(3, R.drawable.ic_history, "Log");
+        for (LinearLayout it : navItems) nav.addView(it, new LinearLayout.LayoutParams(0, Ui.WRAP, 1f));
+        shell.addView(nav, Ui.mw());
 
-        status = new TextView(this);
-        status.setPadding(dp(12), dp(12), dp(12), dp(12));
-        status.setBackgroundColor(Color.parseColor("#EEEEEE"));
-        status.setTextColor(Color.parseColor("#212121"));
-        root.addView(status);
-
-        root.addView(header("Setup"));
-        root.addView(button("1. Set backup password", v -> askNewPassword()));
-        btnApps = button("2. Choose apps to delete", v -> pickApps());
-        root.addView(btnApps);
-        root.addView(button("3. Turn on button trigger (Accessibility)", v -> openAccessibility()));
-        root.addView(button("4. Check root access", v -> checkRoot(true)));
-        root.addView(button("5. Allow backup folder on phone storage", v -> askStorage()));
-        root.addView(button("6. Connect Shizuku (silent delete without root)", v -> connectShizuku()));
-        btnDisguise = button("", v -> pickDisguise());
-        root.addView(btnDisguise);
-        btnLock = button("", v -> manageLock());
-        root.addView(btnLock);
-
-        root.addView(header("Trigger"));
-        root.addView(check("ARMED (buttons are active)", "armed", false));
-        root.addView(check("Show warning popup with 5 second countdown and Cancel button before deleting "
-                + "(turn off for instant, silent run)", "warn", true));
-        root.addView(check("Volume-down: hold for 2 seconds", "vol", true));
-        root.addView(check("Power button: press several times quickly", "power", false));
-        btnPower = button("", v -> pickPowerCount());
-        root.addView(btnPower);
-        root.addView(check("Allow delete without data backup (phone without root: only the app file is "
-                + "backed up, app data is LOST)", "apkOnly", false));
-
-        root.addView(header("Actions"));
-        Button run = button("RUN NOW (backup + delete selected apps)", v -> confirmRun());
-        run.setTextColor(Color.parseColor("#C62828"));
-        root.addView(run);
-        root.addView(button("Backups: restore or delete", v -> showBackups()));
-
-        root.addView(header("Log"));
-        root.addView(button("Clear log", v -> {
-            AppLog.clear(this);
-            refresh();
-        }));
-        log = new TextView(this);
-        log.setTextSize(12);
-        log.setTypeface(Typeface.MONOSPACE);
-        log.setTextIsSelectable(true);
-        root.addView(log);
-
-        ScrollView sv = new ScrollView(this);
-        sv.addView(root);
-        setContentView(sv);
+        buildHome();
+        buildSetup();
+        buildTrigger();
+        buildLog();
+        setContentView(shell);
+        showTab(0);
         checkRoot(false);
         try {
             rikka.shizuku.Shizuku.addRequestPermissionResultListener(shizukuResult);
@@ -213,34 +195,284 @@ public class MainActivity extends Activity {
 
     private int dp(int v) { return (int) (v * getResources().getDisplayMetrics().density + 0.5f); }
 
-    private TextView header(String t) {
-        TextView h = new TextView(this);
-        h.setText(t);
-        h.setTextSize(16);
-        h.setTypeface(Typeface.DEFAULT_BOLD);
-        h.setPadding(0, dp(18), 0, dp(4));
-        return h;
+    /** Light status/navigation bars that match the page background. */
+    @SuppressWarnings("deprecation")
+    private void styleWindow() {
+        getWindow().setStatusBarColor(Ui.BG);
+        getWindow().setNavigationBarColor(Color.WHITE);
+        getWindow().getDecorView().setSystemUiVisibility(
+                View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
     }
 
-    private Button button(String t, View.OnClickListener l) {
-        Button b = new Button(this);
-        b.setText(t);
-        b.setAllCaps(false);
-        b.setOnClickListener(l);
-        b.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT));
-        return b;
+    /** A scrollable page with a big title; returns the body to add cards to. */
+    private LinearLayout page(int index, String title, String subtitle) {
+        LinearLayout body = new LinearLayout(this);
+        body.setOrientation(LinearLayout.VERTICAL);
+        body.setPadding(dp(16), dp(20), dp(16), dp(24));
+        TextView t = Ui.text(this, title, 26, Ui.TEXT, true);
+        body.addView(t);
+        TextView s = Ui.text(this, subtitle, 14, Ui.SUB, false);
+        s.setPadding(0, dp(4), 0, dp(18));
+        body.addView(s);
+        ScrollView sv = new ScrollView(this);
+        sv.setFillViewport(true);
+        sv.addView(body);
+        pageViews[index] = sv;
+        pages.addView(sv);
+        return body;
     }
 
-    private CheckBox check(String t, final String key, boolean def) {
-        CheckBox c = new CheckBox(this);
-        c.setText(t);
-        c.setChecked(Prefs.sp(this).getBoolean(key, def));
-        c.setOnCheckedChangeListener((v, on) -> {
+    private LinearLayout navItem(final int index, int iconRes, String label) {
+        LinearLayout it = new LinearLayout(this);
+        it.setOrientation(LinearLayout.VERTICAL);
+        it.setGravity(Gravity.CENTER_HORIZONTAL);
+        it.setPadding(0, dp(4), 0, dp(4));
+        android.widget.FrameLayout ind = new android.widget.FrameLayout(this);
+        ImageView iv = new ImageView(this);
+        iv.setImageResource(iconRes);
+        ind.addView(iv, new android.widget.FrameLayout.LayoutParams(dp(24), dp(24), Gravity.CENTER));
+        it.addView(ind, new LinearLayout.LayoutParams(dp(60), dp(32)));
+        TextView tv = Ui.text(this, label, 12, Ui.SUB, true);
+        tv.setGravity(Gravity.CENTER);
+        tv.setPadding(0, dp(4), 0, 0);
+        it.addView(tv);
+        it.setBackground(Ui.ripple(null, null));
+        it.setOnClickListener(v -> showTab(index));
+        return it;
+    }
+
+    private void showTab(int index) {
+        for (int k = 0; k < pageViews.length; k++) {
+            boolean sel = k == index;
+            pageViews[k].setVisibility(sel ? View.VISIBLE : View.GONE);
+            android.widget.FrameLayout ind = (android.widget.FrameLayout) navItems[k].getChildAt(0);
+            ind.setBackground(sel ? Ui.round(Ui.ACCENT_SOFT, dp(16)) : null);
+            ((ImageView) ind.getChildAt(0)).setColorFilter(sel ? Ui.ACCENT : Ui.SUB);
+            ((TextView) navItems[k].getChildAt(1)).setTextColor(sel ? Ui.ACCENT : Ui.SUB);
+        }
+    }
+
+    private Row row(int iconRes, String title, View.OnClickListener l) {
+        Row r = new Row();
+        LinearLayout v = new LinearLayout(this);
+        v.setOrientation(LinearLayout.HORIZONTAL);
+        v.setGravity(Gravity.CENTER_VERTICAL);
+        v.setPadding(dp(12), dp(12), dp(10), dp(12));
+        v.setMinimumHeight(dp(64));
+        r.badge = Ui.badge(this, iconRes, Ui.ACCENT, Ui.ACCENT_SOFT, 40);
+        v.addView(r.badge);
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(0, Ui.WRAP, 1f);
+        clp.leftMargin = dp(14);
+        clp.rightMargin = dp(8);
+        r.title = Ui.text(this, title, 15.5f, Ui.TEXT, true);
+        r.sub = Ui.text(this, "", 13, Ui.SUB, false);
+        col.addView(r.title);
+        col.addView(r.sub);
+        v.addView(col, clp);
+        r.pill = Ui.pill(this);
+        v.addView(r.pill);
+        if (l != null) {
+            ImageView ch = Ui.icon(this, R.drawable.ic_chevron, 0xFFB0B5BF, 20);
+            ((LinearLayout.LayoutParams) ch.getLayoutParams()).leftMargin = dp(4);
+            v.addView(ch);
+            v.setBackground(Ui.ripple(null, Ui.round(Color.WHITE, dp(14))));
+            v.setOnClickListener(l);
+        }
+        r.view = v;
+        return r;
+    }
+
+    private void setRow(Row r, int state, String sub, String pill) {
+        r.sub.setText(sub);
+        Ui.setPill(r.pill, state, pill);
+        if (state == Ui.INFO) Ui.tintBadge(r.badge, Ui.ACCENT, Ui.ACCENT_SOFT);
+        else Ui.tintBadge(r.badge, Ui.color(state), Ui.soft(state));
+    }
+
+    /** Adds rows to a card with thin dividers between them. */
+    private LinearLayout cardOf(LinearLayout parent, View... rows) {
+        LinearLayout c = Ui.card(this);
+        for (int i = 0; i < rows.length; i++) {
+            if (i > 0) c.addView(Ui.divider(this, 66));
+            c.addView(rows[i]);
+        }
+        parent.addView(c);
+        return c;
+    }
+
+    private android.widget.Switch switchRow(LinearLayout card, int iconRes, String title, String sub,
+                                            final String key, boolean def) {
+        LinearLayout v = new LinearLayout(this);
+        v.setOrientation(LinearLayout.HORIZONTAL);
+        v.setGravity(Gravity.CENTER_VERTICAL);
+        v.setPadding(dp(12), dp(12), dp(12), dp(12));
+        v.setMinimumHeight(dp(64));
+        v.addView(Ui.badge(this, iconRes, Ui.ACCENT, Ui.ACCENT_SOFT, 40));
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(0, Ui.WRAP, 1f);
+        clp.leftMargin = dp(14);
+        clp.rightMargin = dp(8);
+        col.addView(Ui.text(this, title, 15.5f, Ui.TEXT, true));
+        col.addView(Ui.text(this, sub, 13, Ui.SUB, false));
+        v.addView(col, clp);
+        final android.widget.Switch s = new android.widget.Switch(this);
+        Ui.styleSwitch(s, Ui.ACCENT, 0x803F51B5);
+        s.setChecked(Prefs.sp(this).getBoolean(key, def));
+        s.setOnCheckedChangeListener((b, on) -> {
+            if (syncing) return;
             Prefs.set(this, key, on);
             refresh();
         });
-        return c;
+        v.addView(s);
+        v.setBackground(Ui.ripple(null, Ui.round(Color.WHITE, dp(14))));
+        v.setOnClickListener(x -> s.toggle());
+        if (card.getChildCount() > 0) card.addView(Ui.divider(this, 66));
+        card.addView(v);
+        return s;
+    }
+
+    // ------------------------------------------------------------ pages
+
+    private void buildHome() {
+        LinearLayout b = page(0, "OneKey Uninstaller", "One button press: encrypted backup, then delete.");
+
+        hero = new LinearLayout(this);
+        hero.setOrientation(LinearLayout.VERTICAL);
+        hero.setPadding(dp(20), dp(20), dp(16), dp(18));
+        hero.setElevation(dp(2));
+        LinearLayout.LayoutParams hlp = Ui.mw();
+        hlp.bottomMargin = dp(20);
+        LinearLayout top = new LinearLayout(this);
+        top.setOrientation(LinearLayout.HORIZONTAL);
+        top.setGravity(Gravity.CENTER_VERTICAL);
+        top.addView(Ui.badge(this, R.drawable.ic_shield, Color.WHITE, 0x33FFFFFF, 52));
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(0, Ui.WRAP, 1f);
+        clp.leftMargin = dp(14);
+        clp.rightMargin = dp(8);
+        heroTitle = Ui.text(this, "", 22, Color.WHITE, true);
+        heroSub = Ui.text(this, "", 13.5f, 0xE6FFFFFF, false);
+        col.addView(heroTitle);
+        col.addView(heroSub);
+        top.addView(col, clp);
+        heroSwitch = new android.widget.Switch(this);
+        Ui.styleSwitch(heroSwitch, Color.WHITE, 0x99FFFFFF);
+        heroSwitch.setOnCheckedChangeListener((x, on) -> {
+            if (syncing) return;
+            Prefs.set(this, "armed", on);
+            refresh();
+        });
+        top.addView(heroSwitch);
+        hero.addView(top);
+        heroProgress = Ui.text(this, "", 13, Color.WHITE, true);
+        heroProgress.setPadding(dp(12), dp(5), dp(12), dp(5));
+        heroProgress.setBackground(Ui.round(0x33FFFFFF, dp(999)));
+        LinearLayout.LayoutParams plp = new LinearLayout.LayoutParams(Ui.WRAP, Ui.WRAP);
+        plp.topMargin = dp(16);
+        hero.addView(heroProgress, plp);
+        b.addView(hero, hlp);
+
+        b.addView(Ui.label(this, "Readiness"));
+        rPwd = row(R.drawable.ic_key, "Backup password", v -> askNewPassword());
+        rApps = row(R.drawable.ic_apps, "Apps to delete", v -> pickApps());
+        rAcc = row(R.drawable.ic_bolt, "Button trigger", v -> openAccessibility());
+        rMode = row(R.drawable.ic_delete, "Delete mode", v -> showTab(1));
+        rApk = row(R.drawable.ic_warning, "Delete without data backup", v -> showTab(2));
+        LinearLayout c = cardOf(b, rPwd.view, rApps.view, rAcc.view, rMode.view);
+        apkDiv = Ui.divider(this, 66);
+        c.addView(apkDiv);
+        c.addView(rApk.view);
+
+        b.addView(Ui.label(this, "Actions"));
+        Button run = Ui.filled(this, "Run now: back up and delete", Ui.RED);
+        run.setOnClickListener(v -> confirmRun());
+        LinearLayout.LayoutParams rlp = Ui.mw();
+        rlp.bottomMargin = dp(10);
+        b.addView(run, rlp);
+        btnBackups = Ui.outline(this, "Backups", Ui.ACCENT);
+        btnBackups.setOnClickListener(v -> showBackups());
+        b.addView(btnBackups, Ui.mw());
+    }
+
+    private void buildSetup() {
+        LinearLayout b = page(1, "Setup", "Do these once. Tap any step to change it.");
+        b.addView(Ui.label(this, "Required"));
+        sPwd = row(R.drawable.ic_key, "Backup password", v -> askNewPassword());
+        sApps = row(R.drawable.ic_apps, "Apps to delete", v -> pickApps());
+        sAcc = row(R.drawable.ic_bolt, "Button trigger service", v -> openAccessibility());
+        sStorage = row(R.drawable.ic_folder, "Backup folder", v -> askStorage());
+        cardOf(b, sPwd.view, sApps.view, sAcc.view, sStorage.view);
+
+        b.addView(Ui.label(this, "Delete mode"));
+        sRoot = row(R.drawable.ic_terminal, "Root access", v -> checkRoot(true));
+        sShz = row(R.drawable.ic_link, "Shizuku", v -> connectShizuku());
+        cardOf(b, sRoot.view, sShz.view);
+
+        b.addView(Ui.label(this, "Privacy"));
+        sDisguise = row(R.drawable.ic_eye, "Disguise", v -> pickDisguise());
+        sLock = row(R.drawable.ic_lock, "App lock (PIN)", v -> manageLock());
+        cardOf(b, sDisguise.view, sLock.view);
+    }
+
+    private void buildTrigger() {
+        LinearLayout b = page(2, "Trigger", "Choose what starts a backup-and-delete run.");
+        b.addView(Ui.label(this, "Buttons"));
+        LinearLayout c1 = Ui.card(this);
+        swVol = switchRow(c1, R.drawable.ic_volume, "Volume-down, hold 2 s", "Works on the lock screen too",
+                "vol", true);
+        swPower = switchRow(c1, R.drawable.ic_power, "Power button presses", "Press it quickly several times",
+                "power", false);
+        rPowerCount = row(R.drawable.ic_tune, "Presses needed", v -> pickPowerCount());
+        c1.addView(Ui.divider(this, 66));
+        c1.addView(rPowerCount.view);
+        b.addView(c1);
+
+        b.addView(Ui.label(this, "Safety"));
+        LinearLayout c2 = Ui.card(this);
+        swWarn = switchRow(c2, R.drawable.ic_warning, "Warning countdown",
+                "5-second popup with Cancel before deleting", "warn", true);
+        swApk = switchRow(c2, R.drawable.ic_delete, "Delete without data backup",
+                "Without root only the app file is saved; its data is lost", "apkOnly", false);
+        b.addView(c2);
+
+        b.addView(Ui.label(this, "Open the app"));
+        Row info = row(R.drawable.ic_volume, "Volume-up, hold 2 s", null);
+        info.sub.setText("Opens OneKey from anywhere, even while disguised. In the Calculator you can also hold \"=\" for 2 s.");
+        info.pill.setVisibility(View.GONE);
+        cardOf(b, info.view);
+    }
+
+    private void buildLog() {
+        LinearLayout b = page(3, "Activity log", "What OneKey has done recently.");
+        LinearLayout c = Ui.card(this);
+        LinearLayout head = new LinearLayout(this);
+        head.setOrientation(LinearLayout.HORIZONTAL);
+        head.setGravity(Gravity.CENTER_VERTICAL);
+        head.setPadding(dp(12), dp(6), dp(4), 0);
+        head.addView(Ui.text(this, "Recent", 15.5f, Ui.TEXT, true),
+                new LinearLayout.LayoutParams(0, Ui.WRAP, 1f));
+        Button clear = Ui.outline(this, "Clear", Ui.ACCENT);
+        clear.setMinHeight(dp(40));
+        clear.setMinimumHeight(dp(40));
+        clear.setOnClickListener(v -> {
+            AppLog.clear(this);
+            refresh();
+        });
+        head.addView(clear, new LinearLayout.LayoutParams(Ui.WRAP, dp(40)));
+        c.addView(head);
+        log = new TextView(this);
+        log.setTextSize(12);
+        log.setTextSize(14);
+        log.setTextColor(Ui.TEXT);
+        log.setLineSpacing(0, 1.1f);
+        log.setTextIsSelectable(true);
+        log.setPadding(dp(12), dp(10), dp(12), dp(12));
+        c.addView(log);
+        b.addView(c);
     }
 
     private void toast(String s) { Toast.makeText(this, s, Toast.LENGTH_LONG).show(); }
@@ -258,43 +490,146 @@ public class MainActivity extends Activity {
     }
 
     private void refresh() {
-        if (!realBuilt || status == null) return; // only the real screen has these views
-        Boolean r = rootState;
-        boolean acc = accessibilityOn();
-        boolean owner = Engine.isDeviceOwner(this);
-        StringBuilder s = new StringBuilder();
-        s.append(mark(Prefs.hasKeys(this))).append("Backup password set\n");
-        s.append(mark(!Prefs.targets(this).isEmpty())).append("Apps selected: ")
-                .append(Prefs.targets(this).size()).append('\n');
-        s.append(mark(acc)).append("Button trigger service ").append(acc ? "ON" : "OFF").append('\n');
-        s.append(mark(Prefs.armed(this))).append(Prefs.armed(this) ? "ARMED" : "Not armed").append('\n');
-        if (r == null) s.append("…  Checking root\n");
-        else if (r) s.append("✔  Root: yes. Full app data is backed up and restored\n");
-        else s.append("✘  Root: no. Only the app file (APK) can be backed up\n");
-        boolean shz = Shz.ready();
-        if (r == null || !r) {
-            s.append(mark(shz || owner)).append(shz ? "Shizuku connected: silent delete\n"
-                    : owner ? "Device owner: silent delete\n"
-                    : Shz.running() ? "Shizuku is running but not allowed yet (tap step 6)\n"
-                    : "Shizuku not running: each delete must be confirmed on screen\n");
+        if (!realBuilt || log == null) return; // only the real screen has these views
+        syncing = true;
+        try {
+            Boolean r = rootState;
+            boolean rooted = Boolean.TRUE.equals(r);
+            boolean acc = accessibilityOn();
+            boolean owner = Engine.isDeviceOwner(this);
+            boolean shz = Shz.ready();
+            boolean keys = Prefs.hasKeys(this);
+            int n = Prefs.targets(this).size();
+            boolean storage = Engine.hasAllFilesAccess(this);
+            boolean armed = Prefs.armed(this);
+            boolean silent = rooted || shz || owner;
+            boolean apk = Prefs.sp(this).getBoolean("apkOnly", false);
+            boolean canDelete = rooted || apk;
+            String nApps = n + (n == 1 ? " app" : " apps");
+
+            // --- home: readiness
+            setRow(rPwd, keys ? Ui.OK : Ui.TODO,
+                    keys ? "Set. Backups are encrypted" : "Needed to encrypt backups", keys ? "Ready" : "To do");
+            setRow(rApps, n > 0 ? Ui.OK : Ui.TODO,
+                    n > 0 ? nApps + " selected" : "Pick the apps to delete", n > 0 ? "Ready" : "To do");
+            setRow(rAcc, acc ? Ui.OK : Ui.TODO,
+                    acc ? "Service is running" : "Turn on in Accessibility settings", acc ? "On" : "To do");
+            setRow(rMode, silent ? Ui.OK : Ui.TODO,
+                    rooted ? "Root: silent, with app data" : shz ? "Shizuku: silent delete"
+                            : owner ? "Device owner: silent delete" : "Each delete must be confirmed on screen",
+                    silent ? "Silent" : "Manual");
+            boolean showApk = r != null && !rooted;
+            rApk.view.setVisibility(showApk ? View.VISIBLE : View.GONE);
+            apkDiv.setVisibility(showApk ? View.VISIBLE : View.GONE);
+            setRow(rApk, apk ? Ui.INFO : Ui.BAD,
+                    apk ? "On. App data is not saved without root" : "Off. Nothing is deleted without root",
+                    apk ? "On" : "Off");
+
+            // --- home: hero
+            int ready = (keys ? 1 : 0) + (n > 0 ? 1 : 0) + (acc ? 1 : 0) + (silent ? 1 : 0) + (canDelete ? 1 : 0);
+            StringBuilder how = new StringBuilder();
+            if (Prefs.volEnabled(this)) how.append("hold volume-down 2 s");
+            if (Prefs.powerEnabled(this)) {
+                if (how.length() > 0) how.append(" or ");
+                how.append("press power ").append(Prefs.powerCount(this)).append("x");
+            }
+            heroTitle.setText(armed ? "Armed" : "Not armed");
+            heroSub.setText(!armed ? "Buttons are inactive. Switch on to arm."
+                    : how.length() == 0 ? "No button is enabled. Open Trigger."
+                    : "To delete " + nApps + ": " + how + ".");
+            heroSwitch.setChecked(armed);
+            heroProgress.setText(ready == 5 ? "All set" : "Setup: " + ready + " of 5 ready");
+            GradientDrawable g = new GradientDrawable(GradientDrawable.Orientation.TL_BR,
+                    armed ? new int[]{0xFF1B5E20, 0xFF43A047} : new int[]{0xFF303F9F, 0xFF5C6BC0});
+            g.setCornerRadius(dp(22));
+            hero.setBackground(g);
+            btnBackups.setText("Backups (" + Engine.listBackups(this).size() + ")");
+
+            // --- setup
+            setRow(sPwd, keys ? Ui.OK : Ui.TODO,
+                    keys ? "Set. Tap to change" : "Needed to encrypt backups", keys ? "Ready" : "To do");
+            setRow(sApps, n > 0 ? Ui.OK : Ui.TODO,
+                    n > 0 ? nApps + " selected" : "Pick the apps to delete", n > 0 ? "Ready" : "To do");
+            setRow(sAcc, acc ? Ui.OK : Ui.TODO,
+                    acc ? "Running" : "Turn on in Accessibility settings", acc ? "On" : "To do");
+            setRow(sStorage, storage ? Ui.OK : Ui.TODO,
+                    storage ? Engine.backupDir(this).getAbsolutePath()
+                            : "Allow it so backups survive uninstalling OneKey", storage ? "Ready" : "To do");
+            if (r == null) setRow(sRoot, Ui.INFO, "Checking…", "…");
+            else setRow(sRoot, rooted ? Ui.OK : Ui.INFO,
+                    rooted ? "Rooted: app data is backed up too" : "Not rooted: only the app file is backed up",
+                    rooted ? "Yes" : "No");
+            if (rooted) setRow(sShz, Ui.INFO, "Not needed, the phone is rooted", "—");
+            else if (shz) setRow(sShz, Ui.OK, "Connected: silent delete", "Ready");
+            else if (owner) setRow(sShz, Ui.OK, "Device owner: silent delete", "Ready");
+            else if (Shz.running()) setRow(sShz, Ui.TODO, "Running. Tap to allow access", "To do");
+            else setRow(sShz, Ui.INFO, "Not running: each delete needs a tap", "Off");
+            boolean real = "real".equals(Disguise.current(this).key);
+            setRow(sDisguise, Ui.INFO, real ? "Shows as OneKey Uninstaller" : "Shows as a working Calculator",
+                    real ? "Off" : "Calculator");
+            boolean lock = Prefs.isLockSet(this);
+            setRow(sLock, lock ? Ui.OK : Ui.INFO,
+                    lock ? "PIN asked every time the app opens" : "Anyone with the phone can open it",
+                    lock ? "On" : "Off");
+
+            // --- trigger
+            swVol.setChecked(Prefs.volEnabled(this));
+            swPower.setChecked(Prefs.powerEnabled(this));
+            swWarn.setChecked(Prefs.warn(this));
+            swApk.setChecked(apk);
+            setRow(rPowerCount, Ui.INFO, "Quick presses that start a run", String.valueOf(Prefs.powerCount(this)));
+
+            // --- log
+            String l = AppLog.read(this);
+            log.setText(l == null || l.trim().isEmpty() ? "No activity yet." : formatLog(l));
+        } finally {
+            syncing = false;
         }
-        s.append("Backups: ").append(Engine.backupDir(this).getAbsolutePath());
-        status.setText(s);
-        btnApps.setText("2. Choose apps to delete (" + Prefs.targets(this).size() + " selected)");
-        btnPower.setText("Power presses needed: " + Prefs.powerCount(this) + " (tap to change)");
-        if (btnDisguise != null)
-            btnDisguise.setText("7. Disguise: " + Disguise.current(this).label);
-        if (btnLock != null)
-            btnLock.setText("8. App lock: " + (Prefs.isLockSet(this) ? "On (PIN set)" : "Off"));
-        log.setText(AppLog.read(this));
     }
 
-    private static String mark(boolean ok) { return ok ? "✔  " : "✘  "; }
+    /** Newest first; small grey time line, bold run headers, red failures. */
+    private CharSequence formatLog(String raw) {
+        String[] lines = raw.split("\n");
+        android.text.SpannableStringBuilder sb = new android.text.SpannableStringBuilder();
+        int start = raw.startsWith("\n") || lines.length < 2 ? 0 : 1; // first line may be cut mid-way
+        if (lines.length > 0 && lines[0].length() > 16 && lines[0].charAt(2) == '-' && lines[0].charAt(14) == ' ') start = 0;
+        for (int i = lines.length - 1; i >= start; i--) {
+            String ln = lines[i];
+            if (ln.trim().isEmpty()) continue;
+            String time = "", msg = ln;
+            if (ln.length() > 16 && ln.charAt(14) == ' ' && ln.charAt(15) == ' ') {
+                time = ln.substring(0, 14);
+                msg = ln.substring(16);
+            }
+            boolean header = msg.startsWith("===");
+            if (header) msg = msg.replace("=", "").trim();
+            String low = msg.toLowerCase(Locale.US);
+            boolean bad = low.contains("fail") || low.contains("wrong password") || low.contains("not deleted")
+                    || low.contains("could not");
+            if (sb.length() > 0) sb.append("\n\n");
+            if (!time.isEmpty()) {
+                int a = sb.length();
+                sb.append(time).append('\n');
+                sb.setSpan(new android.text.style.ForegroundColorSpan(0xFF9AA0AA), a, sb.length(), 0);
+                sb.setSpan(new android.text.style.RelativeSizeSpan(0.82f), a, sb.length(), 0);
+            }
+            int b = sb.length();
+            sb.append(msg);
+            int color = bad ? Ui.RED : header ? Ui.ACCENT : Ui.TEXT;
+            sb.setSpan(new android.text.style.ForegroundColorSpan(color), b, sb.length(), 0);
+            if (header || bad) sb.setSpan(new android.text.style.StyleSpan(Typeface.BOLD), b, sb.length(), 0);
+        }
+        return sb;
+    }
 
     // ------------------------------------------------------------ calculator decoy
 
     /** A working calculator shown instead of the real app while disguised. */
+    @SuppressWarnings("deprecation")
     private void buildDecoy() {
+        getWindow().setStatusBarColor(0xFF1C1C1C);
+        getWindow().setNavigationBarColor(0xFF1C1C1C);
+        getWindow().getDecorView().setSystemUiVisibility(0);
         calcCur = new StringBuilder("0");
         calcAcc = 0;
         calcOp = null;
@@ -352,6 +687,21 @@ public class MainActivity extends Activity {
         lp.setMargins(m, m, m, m);
         b.setLayoutParams(lp);
         b.setOnClickListener(v -> calcInput(key));
+        if ("=".equals(key)) {
+            // Backup way in: hold "=" for 2 s opens the real app (the PIN still applies), so the
+            // disguise can never trap the user if the volume-up trigger is switched off.
+            final Runnable reveal = () -> {
+                if (Prefs.isLockSet(this)) promptLock();
+                else buildRealUi();
+            };
+            b.setOnTouchListener((v, ev) -> {
+                int a = ev.getActionMasked();
+                if (a == android.view.MotionEvent.ACTION_DOWN) v.postDelayed(reveal, 2000);
+                else if (a == android.view.MotionEvent.ACTION_UP || a == android.view.MotionEvent.ACTION_CANCEL)
+                    v.removeCallbacks(reveal);
+                return false;
+            });
+        }
         return b;
     }
 
@@ -421,35 +771,41 @@ public class MainActivity extends Activity {
     // ------------------------------------------------------------ app lock (PIN)
 
     private void promptLock() {
+        styleWindow();
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setGravity(Gravity.CENTER);
-        int pad = dp(28);
-        root.setPadding(pad, pad, pad, pad);
-        root.setBackgroundColor(Color.WHITE);
+        root.setGravity(Gravity.CENTER_HORIZONTAL);
+        root.setBackgroundColor(Ui.BG);
+        root.setPadding(dp(32), dp(96), dp(32), dp(32));
 
-        TextView t = new TextView(this);
-        t.setText("Enter PIN");
-        t.setTextSize(20);
-        t.setTypeface(Typeface.DEFAULT_BOLD);
-        t.setTextColor(Color.parseColor("#212121"));
+        root.addView(Ui.badge(this, R.drawable.ic_lock, Ui.ACCENT, Ui.ACCENT_SOFT, 76));
+        TextView t = Ui.text(this, "Enter PIN", 24, Ui.TEXT, true);
         t.setGravity(Gravity.CENTER);
+        t.setPadding(0, dp(22), 0, dp(4));
         root.addView(t);
+        TextView lockSub = Ui.text(this, "OneKey is locked", 14, Ui.SUB, false);
+        lockSub.setGravity(Gravity.CENTER);
+        root.addView(lockSub);
 
         final EditText pin = new EditText(this);
-        pin.setHint("PIN");
+        pin.setHint("• • • •");
         pin.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_VARIATION_PASSWORD);
         pin.setGravity(Gravity.CENTER);
-        pin.setTextSize(22);
-        root.addView(pin,
-                new LinearLayout.LayoutParams(dp(200), ViewGroup.LayoutParams.WRAP_CONTENT));
+        pin.setTextSize(24);
+        pin.setLetterSpacing(0.3f);
+        pin.setTextColor(Ui.TEXT);
+        pin.setBackground(Ui.stroke(Ui.CARD, Ui.DIVIDER, dp(2), dp(16)));
+        pin.setPadding(dp(16), dp(14), dp(16), dp(14));
+        LinearLayout.LayoutParams plp = new LinearLayout.LayoutParams(dp(260), Ui.WRAP);
+        plp.topMargin = dp(28);
+        root.addView(pin, plp);
 
-        final TextView err = new TextView(this);
-        err.setTextColor(Color.parseColor("#C62828"));
-        err.setPadding(0, dp(8), 0, dp(8));
+        final TextView err = Ui.text(this, "", 14, Ui.RED, true);
+        err.setGravity(Gravity.CENTER);
+        err.setPadding(0, dp(10), 0, dp(10));
         root.addView(err);
 
-        Button go = button("Unlock", null);
+        Button go = Ui.filled(this, "Unlock", Ui.ACCENT);
         go.setOnClickListener(v -> {
             if (Prefs.checkLock(this, pin.getText().toString())) {
                 realBuilt = false;
@@ -459,9 +815,11 @@ public class MainActivity extends Activity {
                 pin.setText("");
             }
         });
-        root.addView(go,
-                new LinearLayout.LayoutParams(dp(200), ViewGroup.LayoutParams.WRAP_CONTENT));
-
+        pin.setOnEditorActionListener((v, id, ev) -> {
+            go.performClick();
+            return true;
+        });
+        root.addView(go, new LinearLayout.LayoutParams(dp(260), Ui.WRAP));
         setContentView(root);
     }
 
@@ -727,13 +1085,14 @@ public class MainActivity extends Activity {
         if (!"calc".equals(m.key)) { doDisguise(m); return; }
         final boolean acc = accessibilityOn();
         new AlertDialog.Builder(this).setTitle("Disguise as Calculator")
-                .setMessage("Your app will look and work like a real Calculator. To get back to OneKey, "
-                        + "HOLD the VOLUME-UP button for 2 seconds (works even on the lock screen).\n\n"
-                        + (acc ? "The button trigger is ON — keep it on, it is the only way back in."
-                               : "⚠ The button trigger is OFF. Turn it on first (step 3), otherwise you "
-                               + "will NOT be able to reopen the app after disguising it."))
+                .setMessage("Your app will look and work like a real Calculator. To get back to OneKey:\n\n"
+                        + "• HOLD the VOLUME-UP button for 2 seconds (works even on the lock screen), or\n"
+                        + "• in the calculator, HOLD the \"=\" key for 2 seconds.\n\n"
+                        + "Your PIN (if set) is still asked."
+                        + (acc ? "" : "\n\nThe button trigger is OFF, so only the \"=\" key works until you "
+                               + "turn it on (Setup › Button trigger service)."))
                 .setNegativeButton("Cancel", null)
-                .setPositiveButton(acc ? "Apply" : "Apply anyway", (d, w) -> doDisguise(m))
+                .setPositiveButton("Apply", (d, w) -> doDisguise(m))
                 .show();
     }
 
